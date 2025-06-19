@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "338940478825",
+    "project_id": "mersal-15432",
+    "storage_bucket": "mersal-15432.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:338940478825:android:ed6685226608b3f02d29f8",
+        "android_client_info": {
+          "package_name": "com.example.mersal_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAfEg4aUjCUIh_EA2nj0MJbHAJfZrELUIc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
