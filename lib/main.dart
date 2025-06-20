@@ -61,7 +61,7 @@ class MyApp extends StatelessWidget {
             return const Scaffold(
               body: Center(child: CircularProgressIndicator()),
             );
-          } else if (FirebaseAuth.instance.currentUser != null) {
+          } else if (FirebaseAuth.instance.currentUser == null) {
             return const Homepage();
           } else {
             return const IntroScreen();

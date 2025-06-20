@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %
 
 # التأكد من وجود نماذج YOLO
 arabic_model_path = r"D:\best_ASL.pt"  # تأكدي من تحديث المسار إذا لزم الأمر
-english_model_path = r"D:/best.pt"  # تأserver.pyكدي من تحديث المسار إذا لزم الأمر
+english_model_path = r"D:\best.pt"  # تأserver.pyكدي من تحديث المسار إذا لزم الأمر
 
 if not os.path.exists(arabic_model_path):
     logging.error(f"Arabic YOLO model not found at {arabic_model_path}")
