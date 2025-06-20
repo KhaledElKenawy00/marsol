@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:http/http.dart' as http;
 
 class CameraPage extends StatefulWidget {
   const CameraPage({Key? key}) : super(key: key);
@@ -21,6 +24,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   String _detectedText = "";
   bool _showDetectedText = false;
   final FlutterTts _flutterTts = FlutterTts();
+  Timer? _detectionTimer;
+  String _selectedLanguage = 'arabic';
+  String _apiUrl = 'http://192.168.100.66:5000/detect';
+  Timer? _textClearTimer;
 
   @override
   void initState() {
@@ -39,7 +46,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     setState(() => _isLoading = true);
     try {
       final cameras = await availableCameras();
-      if (cameras.isEmpty) throw Exception("No cameras available");
+      if (cameras.isEmpty) throw Exception("لا توجد كاميرات متاحة");
 
       _controller = CameraController(
         _isFrontCamera
@@ -69,7 +76,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
     setState(() {
       _isDetecting = true;
-      _showDetectedText = false;
+      _showDetectedText = true;
+      _detectedText = "";
     });
 
     Get.snackbar(
@@ -80,11 +88,64 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       colorText: Colors.white,
     );
 
-    await Future.delayed(Duration(seconds: 2));
-    setState(() {
-      _detectedText = "مرحبًا بك في تطبيق ترجمة لغة الإشارة";
-      _showDetectedText = true;
+    _detectionTimer = Timer.periodic(Duration(seconds: 3), (timer) async {
+      if (!_isDetecting) {
+        timer.cancel();
+        return;
+      }
+      await _detectSignLanguage();
     });
+  }
+
+  Future<void> _detectSignLanguage() async {
+    try {
+      if (_controller == null || !_controller!.value.isInitialized) return;
+
+      final image = await _controller!.takePicture();
+      final imageFile = File(image.path);
+      final imageBytes = await imageFile.readAsBytes();
+
+      var request = http.MultipartRequest('POST', Uri.parse(_apiUrl));
+      request.files.add(http.MultipartFile.fromBytes(
+        'file',
+        imageBytes,
+        filename: 'sign_language.jpg',
+      ));
+      request.fields['language'] = _selectedLanguage;
+
+      var response = await request.send();
+
+      if (response.statusCode == 200) {
+        final responseData = await response.stream.bytesToString();
+        final jsonResponse = json.decode(responseData);
+        final newText = jsonResponse['formatted_sentence'] ?? "";
+
+        setState(() {
+          _detectedText += newText; // إضافة النص الجديد بدلاً من استبداله
+          _showDetectedText = true;
+        });
+
+        // إعادة تعيين مؤقت مسح النص
+        _textClearTimer?.cancel();
+        _textClearTimer = Timer(Duration(seconds: 10), () {
+          if (mounted && _isDetecting) {
+            setState(() {
+              _showDetectedText = false;
+            });
+          }
+        });
+
+        await imageFile.delete();
+      }
+    } catch (e) {
+      print('خطأ في الكشف: $e');
+      Get.snackbar(
+        "خطأ",
+        "فشل في الكشف",
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+    }
   }
 
   Future<void> _stopDetection() async {
@@ -92,8 +153,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           AlertDialog(
             title: Text("تأكيد الإيقاف",
                 style: TextStyle(fontWeight: FontWeight.bold)),
-            content:
-                Text("هل أنت متأكد من إيقاف الكشف؟ سيتم إيقاف عملية الترجمة."),
+            content: Text("هل أنت متأكد من إيقاف الكشف؟"),
             actions: [
               TextButton(
                 onPressed: () => Get.back(result: false),
@@ -101,8 +161,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               ),
               TextButton(
                 onPressed: () => Get.back(result: true),
-                child: Text("تأكيد الإيقاف",
-                    style: TextStyle(color: Colors.green)),
+                child: Text("تأكيد", style: TextStyle(color: Colors.green)),
               ),
             ],
           ),
@@ -110,6 +169,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         false;
 
     if (confirm) {
+      _detectionTimer?.cancel();
+      _textClearTimer?.cancel();
       setState(() => _isDetecting = false);
       Get.snackbar(
         "",
@@ -119,6 +180,27 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         colorText: Colors.white,
       );
     }
+  }
+
+  Future<void> _saveText() async {
+    if (_detectedText.isEmpty) {
+      Get.snackbar(
+        "تنبيه",
+        "لا يوجد نص للحفظ",
+        backgroundColor: Colors.orange,
+        colorText: Colors.white,
+      );
+      return;
+    }
+
+    _textClearTimer?.cancel();
+    setState(() => _showDetectedText = true);
+
+    Get.snackbar(
+      "تم الحفظ",
+      "تم حفظ النص بنجاح",
+      duration: Duration(seconds: 2),
+    );
   }
 
   Future<void> _translateText() async {
@@ -133,14 +215,12 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     }
 
     setState(() {
-      _detectedText = _detectedText == "مرحبًا بك في تطبيق ترجمة لغة الإشارة"
-          ? "Welcome to Sign Language Translation App"
-          : "مرحبًا بك في تطبيق ترجمة لغة الإشارة";
+      _selectedLanguage = _selectedLanguage == 'arabic' ? 'english' : 'arabic';
     });
 
     Get.snackbar(
       "",
-      "تمت الترجمة بنجاح",
+      "تم تغيير اللغة إلى ${_selectedLanguage == 'arabic' ? 'العربية' : 'الإنجليزية'}",
       duration: Duration(seconds: 1),
       backgroundColor: Colors.blue,
       colorText: Colors.white,
@@ -158,6 +238,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       return;
     }
 
+    await _flutterTts
+        .setLanguage(_selectedLanguage == 'arabic' ? "ar-SA" : "en-US");
     await _flutterTts.speak(_detectedText);
   }
 
@@ -197,8 +279,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               ),
               TextButton(
                 onPressed: () => Get.back(result: true),
-                child:
-                    Text("تأكيد المسح", style: TextStyle(color: Colors.green)),
+                child: Text("تأكيد", style: TextStyle(color: Colors.green)),
               ),
             ],
           ),
@@ -206,6 +287,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         false;
 
     if (confirm) {
+      _textClearTimer?.cancel();
       setState(() {
         _detectedText = "";
         _showDetectedText = false;
@@ -245,6 +327,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _detectionTimer?.cancel();
+    _textClearTimer?.cancel();
     _controller?.dispose();
     _flutterTts.stop();
     super.dispose();
@@ -314,7 +398,11 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             ),
             AnimatedContainer(
               duration: Duration(milliseconds: 300),
-              height: _showDetectedText ? 100 : 0,
+              height: _showDetectedText ? null : 0,
+              constraints: BoxConstraints(
+                minHeight: _showDetectedText ? 100 : 0,
+                maxHeight: 200,
+              ),
               width: MediaQuery.of(context).size.width * 0.9,
               margin: EdgeInsets.symmetric(vertical: 16),
               padding: EdgeInsets.all(16),
@@ -329,7 +417,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Colors.black,
-                    fontSize: 18,
+                    fontSize: 24,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -396,6 +484,12 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                     label: 'مسح الكل',
                     onPressed: _resetText,
                     color: Colors.red,
+                  ),
+                  _buildActionButton(
+                    icon: Icons.save,
+                    label: 'حفظ',
+                    onPressed: _saveText,
+                    color: Colors.green,
                   ),
                   _buildActionButton(
                     icon:
