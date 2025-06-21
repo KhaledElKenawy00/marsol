@@ -25,9 +25,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   bool _showDetectedText = false;
   final FlutterTts _flutterTts = FlutterTts();
   Timer? _detectionTimer;
+  Timer? _textClearTimer;
   String _selectedLanguage = 'arabic';
   String _apiUrl = 'http://192.168.100.66:5000/detect';
-  Timer? _textClearTimer;
+  bool _isEnglishMode = false;
 
   @override
   void initState() {
@@ -121,11 +122,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         final newText = jsonResponse['formatted_sentence'] ?? "";
 
         setState(() {
-          _detectedText += newText; // إضافة النص الجديد بدلاً من استبداله
+          _detectedText += newText;
           _showDetectedText = true;
         });
 
-        // إعادة تعيين مؤقت مسح النص
         _textClearTimer?.cancel();
         _textClearTimer = Timer(Duration(seconds: 10), () {
           if (mounted && _isDetecting) {
@@ -149,29 +149,35 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }
 
   Future<void> _stopDetection() async {
-    bool confirm = await Get.dialog<bool>(
-          AlertDialog(
-            title: Text("تأكيد الإيقاف",
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            content: Text("هل أنت متأكد من إيقاف الكشف؟"),
-            actions: [
-              TextButton(
-                onPressed: () => Get.back(result: false),
-                child: Text("إلغاء", style: TextStyle(color: Colors.red)),
-              ),
-              TextButton(
-                onPressed: () => Get.back(result: true),
-                child: Text("تأكيد", style: TextStyle(color: Colors.green)),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    bool? confirm = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text("تأكيد الإيقاف",
+              style: TextStyle(fontWeight: FontWeight.bold)),
+          content: Text("هل أنت متأكد من إيقاف الكشف؟"),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text("إلغاء", style: TextStyle(color: Colors.red)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text("تأكيد", style: TextStyle(color: Colors.green)),
+            ),
+          ],
+        );
+      },
+    );
 
-    if (confirm) {
-      _detectionTimer?.cancel();
-      _textClearTimer?.cancel();
-      setState(() => _isDetecting = false);
+    if (confirm == true) {
+      _cancelTimers();
+      if (mounted) {
+        setState(() {
+          _isDetecting = false;
+        });
+      }
       Get.snackbar(
         "",
         "تم إيقاف الكشف",
@@ -182,25 +188,33 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _saveText() async {
-    if (_detectedText.isEmpty) {
-      Get.snackbar(
-        "تنبيه",
-        "لا يوجد نص للحفظ",
-        backgroundColor: Colors.orange,
-        colorText: Colors.white,
-      );
-      return;
-    }
-
+  void _cancelTimers() {
+    _detectionTimer?.cancel();
     _textClearTimer?.cancel();
-    setState(() => _showDetectedText = true);
+    _detectionTimer = null;
+    _textClearTimer = null;
+  }
+
+  Future<void> _toggleLanguageMode() async {
+    setState(() {
+      _isEnglishMode = !_isEnglishMode;
+      _selectedLanguage = _isEnglishMode ? 'english' : 'arabic';
+    });
 
     Get.snackbar(
-      "تم الحفظ",
-      "تم حفظ النص بنجاح",
-      duration: Duration(seconds: 2),
+      "",
+      _isEnglishMode
+          ? "تم التبديل إلى النموذج الإنجليزي"
+          : "تم التبديل إلى النموذج العربي",
+      duration: Duration(seconds: 1),
+      backgroundColor: Colors.blue,
+      colorText: Colors.white,
     );
+
+    if (_isDetecting) {
+      await _stopDetection();
+      await _startDetection();
+    }
   }
 
   Future<void> _translateText() async {
@@ -214,9 +228,12 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       return;
     }
 
-    setState(() {
-      _selectedLanguage = _selectedLanguage == 'arabic' ? 'english' : 'arabic';
-    });
+    if (mounted) {
+      setState(() {
+        _selectedLanguage =
+            _selectedLanguage == 'arabic' ? 'english' : 'arabic';
+      });
+    }
 
     Get.snackbar(
       "",
@@ -267,31 +284,36 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }
 
   Future<void> _resetText() async {
-    bool confirm = await Get.dialog<bool>(
-          AlertDialog(
-            title: Text("تأكيد المسح",
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            content: Text("هل أنت متأكد من مسح النص المكتشف بالكامل؟"),
-            actions: [
-              TextButton(
-                onPressed: () => Get.back(result: false),
-                child: Text("إلغاء", style: TextStyle(color: Colors.red)),
-              ),
-              TextButton(
-                onPressed: () => Get.back(result: true),
-                child: Text("تأكيد", style: TextStyle(color: Colors.green)),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    bool? confirm = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text("تأكيد المسح",
+              style: TextStyle(fontWeight: FontWeight.bold)),
+          content: Text("هل أنت متأكد من مسح النص المكتشف بالكامل؟"),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text("إلغاء", style: TextStyle(color: Colors.red)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text("تأكيد", style: TextStyle(color: Colors.green)),
+            ),
+          ],
+        );
+      },
+    );
 
-    if (confirm) {
+    if (confirm == true) {
       _textClearTimer?.cancel();
-      setState(() {
-        _detectedText = "";
-        _showDetectedText = false;
-      });
+      if (mounted) {
+        setState(() {
+          _detectedText = "";
+          _showDetectedText = false;
+        });
+      }
       Get.snackbar(
         "",
         "تم مسح النص بنجاح",
@@ -304,10 +326,12 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
   void _deleteLastChar() {
     if (_detectedText.isNotEmpty) {
-      setState(() {
-        _detectedText = _detectedText.substring(0, _detectedText.length - 1);
-        if (_detectedText.isEmpty) _showDetectedText = false;
-      });
+      if (mounted) {
+        setState(() {
+          _detectedText = _detectedText.substring(0, _detectedText.length - 1);
+          if (_detectedText.isEmpty) _showDetectedText = false;
+        });
+      }
       Get.snackbar(
         "",
         "تم حذف آخر حرف",
@@ -326,11 +350,11 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _detectionTimer?.cancel();
-    _textClearTimer?.cancel();
-    _controller?.dispose();
-    _flutterTts.stop();
+    _cancelTimers();
+    _controller?.dispose().then((_) {
+      _flutterTts.stop();
+      WidgetsBinding.instance.removeObserver(this);
+    });
     super.dispose();
   }
 
@@ -486,10 +510,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                     color: Colors.red,
                   ),
                   _buildActionButton(
-                    icon: Icons.save,
-                    label: 'حفظ',
-                    onPressed: _saveText,
-                    color: Colors.green,
+                    icon: _isEnglishMode ? Icons.language : Icons.translate,
+                    label: _isEnglishMode ? 'English' : 'العربية',
+                    onPressed: _toggleLanguageMode,
+                    color: Colors.teal,
                   ),
                   _buildActionButton(
                     icon:
